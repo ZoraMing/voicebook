@@ -1,0 +1,44 @@
+"""
+Microsoft Edge TTS 引擎
+基于 edge-tts 库实现，免费调用微软语音合成服务
+"""
+import edge_tts
+from typing import List, Dict
+from .base import TTSProvider
+
+
+class EdgeTTSProvider(TTSProvider):
+    """Microsoft Edge TTS 提供商"""
+
+    def __init__(self):
+        self.voices = [
+            {"id": "xiaoxiao", "name": "晓晓", "voice": "zh-CN-XiaoxiaoNeural", "gender": "女"},
+            {"id": "yunxi", "name": "云希", "voice": "zh-CN-YunxiNeural", "gender": "男"},
+            {"id": "xiaoyi", "name": "晓伊", "voice": "zh-CN-XiaoyiNeural", "gender": "女"},
+            {"id": "yunjian", "name": "云健", "voice": "zh-CN-YunjianNeural", "gender": "男"},
+        ]
+
+    async def generate_audio(self, text: str, voice: str, output_path: str) -> bool:
+        try:
+            # 如果传入的是短 id（如 xiaoxiao），转换为完整 voice key
+            voice_key = voice
+            for v in self.voices:
+                if v["id"] == voice:
+                    voice_key = v["voice"]
+                    break
+
+            communicate = edge_tts.Communicate(text, voice_key)
+            await communicate.save(output_path)
+            return True
+        except Exception as e:
+            print(f"[EdgeTTS] 合成失败: {e}")
+            return False
+
+    def get_voices(self) -> List[Dict]:
+        return self.voices
+
+    def get_name(self) -> str:
+        return "edge"
+
+    def get_supported_formats(self) -> List[str]:
+        return ["mp3"]

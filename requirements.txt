@@ -1,0 +1,28 @@
+# 有声书制作系统依赖
+
+# Web 框架
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# 数据库
+sqlalchemy>=2.0.0
+
+# 电子书解析
+PyMuPDF>=1.23.0
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# TTS 语音合成
+edge-tts>=6.1.0
+
+# 音频处理
+mutagen>=1.47.0
+pydub>=0.25.1
+
+# LLM 支持（可选，用于智能分章）
+openai>=1.0.0
+
+# 实用工具
+tqdm>=4.65.0
