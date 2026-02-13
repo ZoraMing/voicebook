@@ -32,6 +32,10 @@ class Paragraph(ParagraphBase):
         from_attributes = True
 
 
+class ParagraphUpdate(BaseModel):
+    content: str
+
+
 # 章节模式
 class ChapterBase(BaseModel):
     title: str
@@ -40,6 +44,10 @@ class ChapterBase(BaseModel):
 
 class ChapterCreate(ChapterBase):
     book_id: int
+
+
+class ChapterUpdate(BaseModel):
+    title: str
 
 
 class Chapter(ChapterBase):
@@ -112,6 +120,11 @@ class VoiceInfo(BaseModel):
     name: str
     voice: str
     gender: str
+
+
+class BatchSynthesizeRequest(BaseModel):
+    paragraph_ids: List[int]
+    voice: str = "zh-CN-XiaoxiaoNeural"
 
 
 class ExportResponse(BaseModel):

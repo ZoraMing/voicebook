@@ -181,9 +181,9 @@ class LLMClient:
         """
         兜底拆分策略：按句号分割
         """
-        import re
-        # 按中文句号、英文句号、问号、感叹号分割
-        sentences = re.split(r'(?<=[。！？.!?])\s*', text)
+        from app.utils.text import split_to_sentences
+        
+        sentences = split_to_sentences(text)
         
         result = []
         for sentence in sentences:

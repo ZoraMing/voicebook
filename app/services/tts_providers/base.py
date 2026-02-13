@@ -3,14 +3,14 @@ TTS 提供商基类
 定义所有 TTS 引擎的统一接口，便于替换和扩展
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 
 class TTSProvider(ABC):
     """TTS 提供商基类"""
 
     @abstractmethod
-    async def generate_audio(self, text: str, voice: str, output_path: str) -> bool:
+    async def generate_audio(self, text: str, voice: str, output_path: str) -> Tuple[bool, Optional[List[dict]]]:
         """
         生成音频文件
 
@@ -20,7 +20,7 @@ class TTSProvider(ABC):
             output_path: 输出文件路径
 
         Returns:
-            bool: 成功返回 True
+            Tuple[bool, Optional[List[dict]]]: (成功返回 True, 错误信息列表或 None)
         """
         pass
 

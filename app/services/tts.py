@@ -9,12 +9,6 @@ from pathlib import Path
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-try:
-    from mutagen.mp3 import MP3
-    MUTAGEN_AVAILABLE = True
-except ImportError:
-    MUTAGEN_AVAILABLE = False
-
 from app import models, crud
 from app.config import get_settings
 from .tts_providers.base import TTSProvider
@@ -70,26 +64,8 @@ def get_audio_path(book_id: int, paragraph_id: int) -> str:
     return str(book_dir / f"p_{paragraph_id}.mp3")
 
 
-def get_audio_duration(audio_path: str) -> Optional[int]:
-    """获取音频时长(毫秒)"""
-    if not MUTAGEN_AVAILABLE or not os.path.exists(audio_path):
-        return None
-    try:
-        audio = MP3(audio_path)
-        return int(audio.info.length * 1000)
-    except Exception:
-        return None
-
-
-def _clean_text_for_tts(text: str) -> str:
-    """清理文本中不适合朗读的标点符号，替换为空格以防止朗读其名称"""
-    if not text:
-        return ""
-    # 替换这些符号为空格: _ / \ | ~ * # % > - ” “ "
-    # 这些通常是 Markdown 标识符或装饰符，朗读出来会影响流利度
-    text = re.sub(r'[_/\\|~\*#%>\-”“"]', ' ', text)
-    return ' '.join(text.split())
-
+from app.utils.text import clean_text_for_tts
+from app.utils.audio import get_audio_duration
 
 async def synthesize_paragraph(
     db: Session,
@@ -105,7 +81,7 @@ async def synthesize_paragraph(
         crud.update_paragraph_status(db, paragraph.id, "processing")
 
         # 预处理文本：过滤不需要读出的符号
-        clean_content = _clean_text_for_tts(paragraph.content)
+        clean_content = clean_text_for_tts(paragraph.content)
 
         if not clean_content:
             # 如果清理后没有内容（全是无意义符号），直接标记完成并设置时长为 0
@@ -114,8 +90,15 @@ async def synthesize_paragraph(
 
         # 生成音频
         audio_path = get_audio_path(paragraph.book_id, paragraph.id)
-        success = await tts.generate_audio(clean_content, voice, audio_path)
-
+        result = await tts.generate_audio(clean_content, voice, audio_path)
+        
+        # 处理返回值：可能是 bool 或 (bool, timings)
+        if isinstance(result, tuple):
+            success, timings = result
+        else:
+            success = result
+            timings = None
+        
         if not success:
             crud.update_paragraph_status(db, paragraph.id, "failed", "TTS 合成失败")
             return False
@@ -125,8 +108,14 @@ async def synthesize_paragraph(
         if duration_ms is None:
             duration_ms = paragraph.estimated_duration_ms
 
+        # 序列化时间戳
+        sentence_timings_json = None
+        if timings:
+            import json
+            sentence_timings_json = json.dumps(timings, ensure_ascii=False)
+
         # 更新数据库
-        crud.update_paragraph_audio(db, paragraph.id, audio_path, duration_ms)
+        crud.update_paragraph_audio(db, paragraph.id, audio_path, duration_ms, sentence_timings_json)
         return True
 
     except Exception as e:
@@ -172,36 +161,56 @@ def synthesize_book_background(
 ):
     """
     后台任务专用的书籍合成函数
-    - 创建独立的数据库 Session，避免线程安全问题
-    - 在新事件循环中运行异步代码，适合在 BackgroundTasks 中运行
     """
     from app.database import SessionLocal
-
     db = SessionLocal()
-
     try:
         paragraphs = crud.get_pending_paragraphs(db, book_id)
-
         if not paragraphs:
-            print(f"[TTS] 书籍 {book_id} 没有待合成的段落")
             return
-
-        print(f"[TTS] 开始后台合成: 书籍 {book_id}, 共 {len(paragraphs)} 个段落, 并发数 {max_concurrent}")
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
         try:
             result = loop.run_until_complete(
                 _synthesize_batch_async(db, paragraphs, voice, max_concurrent)
             )
-
-            # 更新书籍整体进度
             crud.update_book_tts_progress(db, book_id)
-
-            print(f"[TTS] 合成完成: 书籍 {book_id}, 成功 {result['completed']}, 失败 {result['failed']}")
         finally:
             loop.close()
+    finally:
+        db.close()
 
+
+def synthesize_batch_background(
+    book_id: int,
+    paragraph_ids: List[int],
+    voice: str = "zh-CN-XiaoxiaoNeural",
+    max_concurrent: int = 5
+):
+    """
+    后台任务：批量合成指定段落
+    """
+    from app.database import SessionLocal
+    from app import models
+    db = SessionLocal()
+    try:
+        paragraphs = db.query(models.Paragraph).filter(
+            models.Paragraph.book_id == book_id,
+            models.Paragraph.id.in_(paragraph_ids)
+        ).all()
+
+        if not paragraphs:
+            return
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(
+                _synthesize_batch_async(db, paragraphs, voice, max_concurrent)
+            )
+            crud.update_book_tts_progress(db, book_id)
+        finally:
+            loop.close()
     finally:
         db.close()

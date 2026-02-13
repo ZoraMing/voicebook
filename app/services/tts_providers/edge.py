@@ -3,7 +3,7 @@ Microsoft Edge TTS 引擎
 基于 edge-tts 库实现，免费调用微软语音合成服务
 """
 import edge_tts
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 from .base import TTSProvider
 
 
@@ -18,7 +18,7 @@ class EdgeTTSProvider(TTSProvider):
             {"id": "yunjian", "name": "云健", "voice": "zh-CN-YunjianNeural", "gender": "男"},
         ]
 
-    async def generate_audio(self, text: str, voice: str, output_path: str) -> bool:
+    async def generate_audio(self, text: str, voice: str, output_path: str) -> Tuple[bool, Optional[List[dict]]]:
         try:
             # 如果传入的是短 id（如 xiaoxiao），转换为完整 voice key
             voice_key = voice
@@ -28,11 +28,23 @@ class EdgeTTSProvider(TTSProvider):
                     break
 
             communicate = edge_tts.Communicate(text, voice_key)
-            await communicate.save(output_path)
-            return True
+            timings = []
+            
+            with open(output_path, "wb") as f:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        timings.append({
+                            "text": chunk["text"],
+                            "offset": chunk["offset"],
+                            "duration": chunk["duration"]
+                        })
+            
+            return True, timings
         except Exception as e:
             print(f"[EdgeTTS] 合成失败: {e}")
-            return False
+            return False, None
 
     def get_voices(self) -> List[Dict]:
         return self.voices

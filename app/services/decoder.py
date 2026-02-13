@@ -43,7 +43,7 @@ def decode_ebook(db: Session, file_path: str) -> Tuple[int, str]:
             # 创建书籍记录
             book = crud.create_book(db, title=title, author=author, file_path=file_path)
 
-            # 获取章节数据
+            # 获取章节数据，章节分片
             if settings.ENABLE_SMART_PARSING:
                 print("正在使用 LLM 进行智能分章...")
                 chapters_data = _smart_extract_chapters(decoder)

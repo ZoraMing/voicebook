@@ -1,9 +1,3 @@
-"""
-有声书导出服务
-将已合成的段落音频按章节分组合并为 WAV 文件，并生成 LRC 歌词文件。
-"""
-import os
-import re
 import shutil
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
@@ -11,6 +5,9 @@ from sqlalchemy.orm import Session
 
 from app import models, crud
 from app.config import get_settings
+from app.utils.text import split_to_sentences, sanitize_filename
+from app.utils.audio import merge_audio_to_wav
+from app.utils.files import get_export_dir, get_zip_path, create_zip_archive, cleanup_book_files
 
 settings = get_settings()
 
@@ -170,8 +167,35 @@ def generate_lrc(
         # 段落实际时长
         para_duration = para.audio_duration_ms or para.estimated_duration_ms or 0
         
-        # 将段落拆分为句子
-        sentences = _split_to_sentences(para.content)
+        # 尝试使用精确的句子时间戳
+        if getattr(para, 'sentence_timings', None):
+            try:
+                import json
+                timings = json.loads(para.sentence_timings)
+                if timings:
+                    for timing in timings:
+                        # 转换时间单位: 1 unit = 100ns = 0.0001ms
+                        ts_offset_ms = timing['offset'] / 10000
+                        
+                        # 计算绝对时间戳
+                        abs_time_ms = current_time_ms + ts_offset_ms
+                        
+                        minutes = int(abs_time_ms // 60000)
+                        seconds = int((abs_time_ms % 60000) // 1000)
+                        centiseconds = int((abs_time_ms % 1000) // 10)
+                        
+                        text = timing['text'].strip()
+                        if text:
+                            lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}]{text}")
+                    
+                    # 累加段落时长
+                    current_time_ms += para_duration
+                    continue
+            except Exception as e:
+                print(f"Error parsing timings for para {para.id}: {e}")
+        
+        # === 回退逻辑：将段落拆分为句子并估算时间 ===
+        sentences = split_to_sentences(para.content)
         total_chars = sum(len(s) for s in sentences)
         
         if total_chars == 0:
@@ -181,9 +205,9 @@ def generate_lrc(
         # 按句子字数比例分配时间
         for sentence in sentences:
             # 格式化时间戳
-            minutes = current_time_ms // 60000
-            seconds = (current_time_ms % 60000) // 1000
-            centiseconds = (current_time_ms % 1000) // 10
+            minutes = int(current_time_ms // 60000)
+            seconds = int((current_time_ms % 60000) // 1000)
+            centiseconds = int((current_time_ms % 1000) // 10)
             
             lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}]{sentence}")
             
@@ -192,81 +216,6 @@ def generate_lrc(
             current_time_ms += sentence_duration
     
     return "\n".join(lines)
-
-
-def merge_audio_to_wav(
-    paragraphs: List[models.Paragraph],
-    output_path: str,
-    sample_rate: int = 16000,
-    channels: int = 1
-) -> bool:
-    """
-    将多个段落的 MP3 音频合并为单个 WAV 文件。
-    使用低采样率和单声道保持小体积。
-    
-    Args:
-        paragraphs: 段落列表
-        output_path: 输出 WAV 文件路径
-        sample_rate: 采样率（默认 16kHz）
-        channels: 声道数（默认单声道）
-    
-    Returns:
-        是否成功
-    """
-    try:
-        from pydub import AudioSegment
-    except ImportError:
-        print("[导出] 错误: 需要安装 pydub 库: pip install pydub")
-        return False
-    
-    try:
-        # 创建空音频
-        combined = AudioSegment.empty()
-        skipped = 0
-        
-        for para in paragraphs:
-            audio_path = para.audio_path
-            if not audio_path or not os.path.exists(audio_path):
-                # 跳过没有音频的段落
-                skipped += 1
-                continue
-            
-            # 加载音频片段
-            try:
-                segment = AudioSegment.from_file(audio_path)
-                combined += segment
-            except Exception as e:
-                print(f"[导出] 警告: 加载音频失败 {audio_path}: {e}")
-                skipped += 1
-                continue
-        
-        if len(combined) == 0:
-            print("[导出] 错误: 没有可用的音频片段")
-            return False
-        
-        if skipped > 0:
-            print(f"[导出] 跳过了 {skipped} 个无音频的段落")
-        
-        # 转换参数：低采样率、单声道、16位
-        combined = combined.set_frame_rate(sample_rate)
-        combined = combined.set_channels(channels)
-        combined = combined.set_sample_width(2)  # 16位
-        
-        # 导出为 WAV
-        combined.export(output_path, format="wav")
-        
-        file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        duration_min = len(combined) / 60000
-        print(f"[导出] WAV 已生成: {output_path} "
-              f"(时长: {duration_min:.1f}分钟, 大小: {file_size_mb:.1f}MB)")
-        
-        return True
-        
-    except Exception as e:
-        print(f"[导出] 音频合并失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 
 def export_book(
@@ -291,7 +240,7 @@ def export_book(
     
     # 准备输出目录
     base_dir = Path(output_base_dir) if output_base_dir else OUTPUT_DIR
-    book_dir = base_dir / _sanitize_filename(book.title)
+    book_dir = base_dir / sanitize_filename(book.title)
     
     # 清空旧的导出
     if book_dir.exists():
@@ -340,7 +289,10 @@ def export_book(
         print(f"[导出] LRC 已生成: {lrc_path}")
         
         # 合并音频为 WAV
-        wav_success = merge_audio_to_wav(group['paragraphs'], str(wav_path))
+        # 使用 utils.audio 中的 merge_audio_to_wav
+        # 需要传入音频路径列表
+        audio_paths = [p.audio_path for p in group['paragraphs']]
+        wav_success = merge_audio_to_wav(audio_paths, str(wav_path))
         
         if wav_success:
             success_count += 1
@@ -393,79 +345,6 @@ def export_book_background(book_id: int, output_base_dir: str = None):
     finally:
         db.close()
 
+# get_export_dir, get_zip_path, create_zip_archive, cleanup_book_files, _sanitize_filename 
+# 均已移至 app.utils 或不再需要
 
-def get_export_dir(book_title: str) -> Path:
-    """获取书籍导出目录"""
-    return OUTPUT_DIR / _sanitize_filename(book_title)
-
-def get_zip_path(book_title: str) -> Path:
-    """获取书籍导出压缩包路径"""
-    return OUTPUT_DIR / f"{_sanitize_filename(book_title)}.zip"
-
-def create_zip_archive(book_title: str) -> Optional[Path]:
-    """
-    创建书籍导出的压缩包
-    
-    Returns:
-        压缩包路径，如果失败则返回 None
-    """
-    book_dir = get_export_dir(book_title)
-    if not book_dir.exists():
-        return None
-        
-    zip_path = get_zip_path(book_title)
-    
-    try:
-        if zip_path.exists():
-            zip_path.unlink()
-            
-        import zipfile
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(book_dir):
-                for file in files:
-                    file_path = Path(root) / file
-                    arcname = file_path.relative_to(book_dir)
-                    zipf.write(file_path, arcname)
-        return zip_path
-    except Exception as e:
-        print(f"[导出] 创建压缩包失败: {e}")
-        return None
-
-def cleanup_book_files(book_id: int, book_title: str) -> None:
-    """
-    清理书籍相关的所有文件（音频、导出、压缩包）
-    """
-    # 1. 清理临时音频目录
-    audio_dir = Path("audio") / f"book_{book_id}"
-    if audio_dir.exists():
-        try:
-            shutil.rmtree(audio_dir)
-            print(f"[清理] 已删除音频目录: {audio_dir}")
-        except Exception as e:
-            print(f"[清理] 删除音频目录失败: {e}")
-            
-    # 2. 清理导出目录
-    export_dir = get_export_dir(book_title)
-    if export_dir.exists():
-        try:
-            shutil.rmtree(export_dir)
-            print(f"[清理] 已删除导出目录: {export_dir}")
-        except Exception as e:
-            print(f"[清理] 删除导出目录失败: {e}")
-            
-    # 3. 清理 ZIP 包
-    zip_path = get_zip_path(book_title)
-    if zip_path.exists():
-        try:
-            zip_path.unlink()
-            print(f"[清理] 已删除压缩包: {zip_path}")
-        except Exception as e:
-            print(f"[清理] 删除压缩包失败: {e}")
-
-def _sanitize_filename(name: str) -> str:
-    """清理文件名，移除不合法字符"""
-    # 替换 Windows 不允许的字符
-    invalid_chars = r'<>:"/\|?*'
-    for c in invalid_chars:
-        name = name.replace(c, '_')
-    return name.strip()

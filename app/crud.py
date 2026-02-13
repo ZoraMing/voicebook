@@ -157,6 +157,11 @@ def create_paragraphs_batch(db: Session, paragraphs_data: List[dict]) -> int:
     return len(paragraphs)
 
 
+def get_paragraph(db: Session, paragraph_id: int) -> Optional[models.Paragraph]:
+    """获取单个段落"""
+    return db.query(models.Paragraph).filter(models.Paragraph.id == paragraph_id).first()
+
+
 def get_chapter_paragraphs(db: Session, chapter_id: int) -> List[models.Paragraph]:
     """获取章节的所有段落"""
     return db.query(models.Paragraph).filter(
@@ -184,6 +189,7 @@ def update_paragraph_audio(
     paragraph_id: int, 
     audio_path: str, 
     audio_duration_ms: int,
+    sentence_timings: str = None,
     status: str = "completed"
 ):
     """更新段落音频信息"""
@@ -193,6 +199,8 @@ def update_paragraph_audio(
     if paragraph:
         paragraph.audio_path = audio_path
         paragraph.audio_duration_ms = audio_duration_ms
+        if sentence_timings is not None:
+            paragraph.sentence_timings = sentence_timings
         paragraph.tts_status = status
         db.commit()
 
@@ -206,3 +214,58 @@ def update_paragraph_status(db: Session, paragraph_id: int, status: str, error: 
         paragraph.tts_status = status
         paragraph.tts_error = error
         db.commit()
+
+
+def update_chapter(db: Session, chapter_id: int, title: str) -> Optional[models.Chapter]:
+    """更新章节标题"""
+    chapter = get_chapter(db, chapter_id)
+    if chapter:
+        chapter.title = title
+        db.commit()
+    return chapter
+
+
+def update_paragraph(db: Session, paragraph_id: int, content: str) -> Optional[models.Paragraph]:
+    """更新段落内容并重置 TTS 状态"""
+    paragraph = db.query(models.Paragraph).filter(models.Paragraph.id == paragraph_id).first()
+    if paragraph:
+        paragraph.content = content
+        
+        # 重置 TTS 状态
+        paragraph.tts_status = "pending"
+        paragraph.audio_path = None
+        paragraph.audio_duration_ms = None
+        paragraph.sentence_timings = None
+        paragraph.tts_error = None
+        
+        # 重新计算字数和估算时长
+        paragraph.char_count = len(content)
+        paragraph.estimated_duration_ms = int(len(content) / 300 * 60 * 1000)
+        
+        db.commit()
+    return paragraph
+
+
+def delete_chapter(db: Session, chapter_id: int) -> bool:
+    """删除章节及其关联段落"""
+    chapter = get_chapter(db, chapter_id)
+    if chapter:
+        db.delete(chapter)
+        db.commit()
+        return True
+    return False
+
+
+def delete_paragraph(db: Session, paragraph_id: int) -> bool:
+    """删除段落"""
+    paragraph = db.query(models.Paragraph).filter(models.Paragraph.id == paragraph_id).first()
+    if paragraph:
+        # 更新章节统计
+        chapter_id = paragraph.chapter_id
+        db.delete(paragraph)
+        db.commit()
+        
+        # 重新统计章节段落数
+        update_chapter_stats(db, chapter_id)
+        return True
+    return False

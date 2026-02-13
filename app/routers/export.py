@@ -86,13 +86,18 @@ def download_export(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(404, "书籍不存在")
     
-    book_dir = audiobook_exporter.get_export_dir(book.title)
+    from app.config import get_settings
+    settings = get_settings()
+    output_base_dir = Path(settings.OUTPUT_DIR)
+    
+    from app.utils.files import get_export_dir, create_zip_archive
+    book_dir = get_export_dir(output_base_dir, book.title)
     
     if not book_dir.exists():
         raise HTTPException(404, "导出文件不存在，请先执行导出")
     
     # 生成 ZIP 文件
-    zip_path = audiobook_exporter.create_zip_archive(book.title)
+    zip_path = create_zip_archive(output_base_dir, book.title)
     
     if not zip_path:
          raise HTTPException(500, "创建压缩包失败")
@@ -112,9 +117,16 @@ def get_export_files(book_id: int, db: Session = Depends(get_db)):
     book = crud.get_book(db, book_id)
     if not book:
         raise HTTPException(404, "书籍不存在")
-        
-    book_dir = audiobook_exporter.get_export_dir(book.title)
-    safe_title = audiobook_exporter._sanitize_filename(book.title)
+    
+    from app.config import get_settings
+    settings = get_settings()
+    output_base_dir = Path(settings.OUTPUT_DIR)
+
+    from app.utils.files import get_export_dir
+    from app.utils.text import sanitize_filename
+    
+    book_dir = get_export_dir(output_base_dir, book.title)
+    safe_title = sanitize_filename(book.title)
     
     if not book_dir.exists():
         return {"files": []}

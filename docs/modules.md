@@ -106,18 +106,13 @@ def create_zip_archive(book_title: str) -> Path:
     """将导出目录打包为 ZIP"""
 ```
 
-### 1.4 数据层
+### 1.5 全局实用工具 (utils/) (v2.1 新增)
 
-#### models.py - ORM 模型
-- `Book` - 书籍模型
-- `Chapter` - 章节模型
-- `Paragraph` - 段落模型
+为了提高代码复用性，通用的非业务逻辑被提取到 `app/utils` 包中：
 
-#### crud.py - 数据库操作
-- 书籍: `create_book`, `get_book`, `get_books`, `delete_book`
-- 章节: `create_chapter`, `get_book_chapters`
-- 段落: `create_paragraph`, `create_paragraphs_batch`, `get_pending_paragraphs`
-- 更新: `update_paragraph_audio`, `update_paragraph_status`
+- **audio.py**: 处理音频时长获取 (`get_audio_duration`) 和音频分段合并 (`merge_audio_to_wav`)。
+- **text.py**: 提供文本清洗 (`clean_text_for_tts`)、文件名脱敏 (`sanitize_filename`) 及句子分割 (`split_to_sentences`)。
+- **files.py**: 负责目录路径管理 (`get_export_dir`)、ZIP 归档 (`create_zip_archive`) 及冗余文件清理。
 
 ---
 
@@ -199,8 +194,14 @@ class TTSProvider(ABC):
         """获取可用语音"""
     
     @abstractmethod
-    async def generate_audio(self, text, voice, output_path) -> bool:
-        """生成音频文件"""
+    async def generate_audio(self, text, voice, output_path) -> Tuple[bool, Optional[List[dict]]]:
+        """
+        生成音频文件并返回时间戳
+        
+        Returns:
+            (success, timings): 
+            timings 为字典列表，包含 {'text': str, 'offset': int, 'duration': int}
+        """
 ```
 
 ### 3.2 Edge TTS 实现 (tts_providers/edge.py)
@@ -212,8 +213,12 @@ class EdgeTTSProvider(TTSProvider):
     def get_voices(self) -> List[Dict]:
         # 返回中文语音列表
         
-    async def generate_audio(self, text, voice, output_path) -> bool:
-        # 调用 edge-tts 生成音频
+    async def generate_audio(self, text, voice, output_path) -> Tuple[bool, Optional[List[dict]]]:
+        """
+        调用 edge-tts 生成音频
+        - 实时监听 WordBoundary 事件捕获高精度时间戳
+        - 解决 Python 3.14 兼容性问题
+        """
 ```
 
 ---

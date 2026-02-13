@@ -120,8 +120,8 @@ def delete_book(book_id: int, db: Session = Depends(get_db)):
     # 数据库删除
     if crud.delete_book(db, book_id):
         # 使用统一接口清理文件
-        from app.services.audiobook_exporter import cleanup_book_files
-        cleanup_book_files(book_id, book_title)
+        from app.utils.files import cleanup_book_files
+        cleanup_book_files(book_id, book_title, Path(settings.OUTPUT_DIR))
             
         return {"success": True, "message": "删除成功"}
     raise HTTPException(404, "删除失败")
@@ -152,3 +152,50 @@ def get_chapter_paragraphs(chapter_id: int, db: Session = Depends(get_db)):
     if not chapter:
         raise HTTPException(404, "章节不存在")
     return crud.get_chapter_paragraphs(db, chapter_id)
+
+
+# ==================== 编辑接口 ====================
+
+@router.put("/chapters/{chapter_id}", response_model=schemas.ChapterSimple)
+def update_chapter(
+    chapter_id: int, 
+    chapter_update: schemas.ChapterUpdate, 
+    db: Session = Depends(get_db)
+):
+    """更新章节标题"""
+    chapter = crud.update_chapter(db, chapter_id, chapter_update.title)
+    if not chapter:
+        raise HTTPException(404, "章节不存在")
+    return chapter
+
+
+@router.delete("/chapters/{chapter_id}")
+def delete_chapter(chapter_id: int, db: Session = Depends(get_db)):
+    """删除章节及其所有段落"""
+    if crud.delete_chapter(db, chapter_id):
+        return {"success": True, "message": "删除成功"}
+    raise HTTPException(404, "章节不存在")
+
+
+@router.put("/paragraphs/{paragraph_id}", response_model=schemas.Paragraph)
+def update_paragraph(
+    paragraph_id: int, 
+    paragraph_update: schemas.ParagraphUpdate, 
+    db: Session = Depends(get_db)
+):
+    """
+    更新段落内容
+    注意：修改内容会重置 TTS 状态为 pending，需要重新合成
+    """
+    paragraph = crud.update_paragraph(db, paragraph_id, paragraph_update.content)
+    if not paragraph:
+        raise HTTPException(404, "段落不存在")
+    return paragraph
+
+
+@router.delete("/paragraphs/{paragraph_id}")
+def delete_paragraph(paragraph_id: int, db: Session = Depends(get_db)):
+    """删除段落"""
+    if crud.delete_paragraph(db, paragraph_id):
+        return {"success": True, "message": "删除成功"}
+    raise HTTPException(404, "段落不存在")

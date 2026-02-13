@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  /* Neutral E-book Reader Theme */
+  --color-book-bg: #f5f5f4;
+  /* Stone-100 equivalent, neutral gray/beige */
+  --color-book-paper: #ffffff;
+  /* White paper */
+  --color-book-text: #292524;
+  /* Stone-800, soft black */
+  --color-book-text-light: #78716c;
+  /* Stone-500 */
+  --color-book-accent: #ea580c;
+  /* Orange-600 */
+  --color-book-accent-hover: #c2410c;
+  /* Orange-700 */
+  --color-book-border: #e7e5e4;
+  /* Stone-200 */
+  --color-book-sidebar: #fafaf9;
+  /* Stone-50 */
+
+  --font-serif: var(--font-serif), serif;
+  --font-sans: var(--font-sans), sans-serif;
+}
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-book-bg);
+    color: var(--color-book-text);
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-sans);
+    /* Use sans for UI headers, serif for book content only */
+    font-weight: 600;
+    color: #1c1917;
+    /* Stone-900 */
+  }
+}

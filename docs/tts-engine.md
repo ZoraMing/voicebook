@@ -49,7 +49,7 @@ class OpenAITTSProvider(TTSProvider):
         # self.api_key = ...
         pass
 
-    async def generate_audio(self, text: str, voice: str, output_path: str) -> bool:
+    async def generate_audio(self, text: str, voice: str, output_path: str) -> Tuple[bool, Optional[List[dict]]]:
         """
         生成音频文件
         
@@ -59,18 +59,19 @@ class OpenAITTSProvider(TTSProvider):
             output_path: 音频文件保存路径 (绝对路径)
             
         Returns:
-            bool: 成功返回 True, 失败返回 False
+            Tuple[bool, Optional[List[dict]]]: 
+                - 第一个元素为是否成功
+                - 第二个元素为时间戳列表，如果引擎不支持则返回 None
         """
         try:
             # 调用 API 生成音频
-            # response = openai.Audio.create(...)
-            # with open(output_path, "wb") as f:
-            #     f.write(response.content)
+            # ...
+            # timings = [{"text": "Hello", "offset": 0, "duration": 100}, ...]
             print(f"[OpenAI] Generating audio for: {text[:20]}...")
-            return True
+            return True, None # 示例暂未实现时间戳
         except Exception as e:
             print(f"[OpenAI] Error: {e}")
-            return False
+            return False, None
 
     def get_voices(self) -> List[Dict]:
         """
@@ -139,3 +140,16 @@ TTSFactory.register("openai", OpenAITTSProvider) # 注册新引擎
 2.  重启后端服务。
 3.  在前端页面刷新，检查“声音选择”列表是否加载了新引擎的声音列表。
 4.  尝试合成一段文本，检查后台日志和输出文件。
+
+---
+
+## 3. 高精度同步 (WordBoundary)
+
+从 v2.1 版本开始，项目支持捕获 TTS 引擎的 WordBoundary 事件。
+
+如果您开发的新引擎支持返回每个词或句子的时间戳（例如 Azure TTS, Google TTS 等），请确保 `generate_audio` 返回一个包含以下字段的列表：
+- `text`: 该时间戳对应的文本内容。
+- `offset`: 偏移量（单位：100纳秒）。
+- `duration`: 持续时间（单位：100纳秒）。
+
+这些数据将被存入数据库并直接用于生成 LRC 文件，确保歌词与语音完美同步。

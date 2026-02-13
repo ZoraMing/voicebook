@@ -62,6 +62,8 @@ class Paragraph(Base):
     # TTS 音频
     audio_path = Column(String(1000), nullable=True)
     audio_duration_ms = Column(Integer, nullable=True)
+    # JSON 格式的句子/词级别时间戳
+    sentence_timings = Column(Text, nullable=True)
     tts_status = Column(String(20), default="pending")  # pending/processing/completed/failed
     tts_error = Column(Text, nullable=True)
     

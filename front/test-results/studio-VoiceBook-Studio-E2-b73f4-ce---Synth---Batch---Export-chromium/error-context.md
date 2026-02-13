@@ -1,0 +1,71 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - heading "VoiceBook" [level=1] [ref=e5]:
+        - img [ref=e6]
+        - generic [ref=e8]: VoiceBook
+      - button "导入书籍" [ref=e10]:
+        - img [ref=e11]
+        - generic [ref=e14]: 导入书籍
+      - navigation [ref=e15]:
+        - generic [ref=e16]: 我的书库
+        - list [ref=e17]:
+          - listitem [ref=e18]:
+            - generic [ref=e19] [cursor=pointer]:
+              - img [ref=e20]
+              - img [ref=e22]
+              - generic [ref=e24]: 讲解ai
+              - button "整书批量合成" [ref=e25]:
+                - img [ref=e26]
+          - listitem [ref=e29]:
+            - generic [ref=e30] [cursor=pointer]:
+              - img [ref=e31]
+              - img [ref=e33]
+              - generic [ref=e35]: test_api
+              - button "整书批量合成" [ref=e36]:
+                - img [ref=e37]
+          - listitem [ref=e40]:
+            - generic [ref=e41] [cursor=pointer]:
+              - img [ref=e42]
+              - img [ref=e44]
+              - generic [ref=e46]: 菊与刀
+              - button "整书批量合成" [ref=e47]:
+                - img [ref=e48]
+          - listitem [ref=e51]:
+            - generic [ref=e52] [cursor=pointer]:
+              - img [ref=e53]
+              - img [ref=e55]
+              - generic [ref=e57]: 讲解ai
+              - button "整书批量合成" [ref=e58]:
+                - img [ref=e59]
+      - generic [ref=e63]: VoiceBook v1.0 · 智能有声书制作
+    - main [ref=e64]:
+      - button "导出书籍" [ref=e66]:
+        - img [ref=e67]
+        - generic [ref=e70]: 导出书籍
+      - generic [ref=e73]:
+        - img [ref=e74]
+        - paragraph [ref=e76]: 请在左侧选择要编辑的章节
+      - generic [ref=e77]:
+        - generic [ref=e78]: No paragraph selected
+        - generic [ref=e80]:
+          - button [ref=e81]:
+            - img [ref=e82]
+          - button [ref=e84]:
+            - img [ref=e85]
+          - button [ref=e87]:
+            - img [ref=e88]
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: Speed
+            - combobox [ref=e94] [cursor=pointer]:
+              - option "1.0x" [selected]
+              - option "1.25x"
+              - option "1.5x"
+              - option "2.0x"
+          - img [ref=e95]
+  - alert [ref=e99]
+```
