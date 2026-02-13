@@ -147,7 +147,19 @@ export const api = {
         return res.json();
     },
 
+    getExportFiles: async (bookId: number) => {
+        const res = await fetch(`${API_BASE}/books/${bookId}/export/files`);
+        if (!res.ok) throw new Error('Failed to fetch export files');
+        return res.json();
+    },
+
     getExportDownloadUrl: (bookId: number) => `${API_BASE}/books/${bookId}/export/download`,
+
+    getBook: async (bookId: number): Promise<Book> => {
+        const res = await fetch(`${API_BASE}/books/${bookId}`);
+        if (!res.ok) throw new Error('Failed to fetch book details');
+        return res.json();
+    },
 
     getAudioUrl: (bookId: number, paragraphId: number) => `${API_BASE}/audio/${bookId}/${paragraphId}`,
 };

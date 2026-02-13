@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import models, crud
 from app.config import get_settings
 from app.utils.text import split_to_sentences, sanitize_filename
-from app.utils.audio import merge_audio_to_wav
+from app.utils.audio import merge_audio_to_wav, merge_audio
 from app.utils.files import get_export_dir, get_zip_path, create_zip_archive, cleanup_book_files
 
 settings = get_settings()
@@ -224,7 +224,7 @@ def export_book(
     output_base_dir: str = None
 ) -> Dict:
     """
-    导出整本书为 WAV + LRC 文件。
+    导出整本书为 MP3 + LRC 文件。
     
     Args:
         db: 数据库会话
@@ -268,7 +268,7 @@ def export_book(
         segment_dir = book_dir / folder_name
         segment_dir.mkdir(parents=True, exist_ok=True)
         
-        wav_path = segment_dir / f"{folder_name}.wav"
+        mp3_path = segment_dir / f"{folder_name}.mp3"
         lrc_path = segment_dir / f"{folder_name}.lrc"
         
         duration_min = group['total_duration_ms'] / 60000
@@ -288,25 +288,32 @@ def export_book(
             f.write(lrc_content)
         print(f"[导出] LRC 已生成: {lrc_path}")
         
-        # 合并音频为 WAV
-        # 使用 utils.audio 中的 merge_audio_to_wav
-        # 需要传入音频路径列表
+        # 合并音频为 MP3
         audio_paths = [p.audio_path for p in group['paragraphs']]
-        wav_success = merge_audio_to_wav(audio_paths, str(wav_path))
+        wav_success = merge_audio(audio_paths, str(mp3_path), output_format="mp3", bitrate="64k")
         
         if wav_success:
             success_count += 1
         else:
             fail_count += 1
         
+        if not wav_success:
+            # 如果音频生成失败，清理已生成的 LRC 和空文件夹
+            if lrc_path.exists():
+                lrc_path.unlink()
+            if segment_dir.exists() and not any(segment_dir.iterdir()):
+                segment_dir.rmdir()
+            
+            print(f"[导出] 警告: 音频生成失败，跳过该段: {folder_name}")
+        
         results.append({
             'folder': folder_name,
             'chapters': group['chapter_indices'],
             'duration_ms': group['total_duration_ms'],
             'wav_generated': wav_success,
-            'lrc_generated': True,
-            'wav_path': str(wav_path),
-            'lrc_path': str(lrc_path)
+            'lrc_generated': True if wav_success else False,  # 标记为 False 因为已删除
+            'wav_path': str(wav_path) if wav_success else None,
+            'lrc_path': str(lrc_path) if wav_success else None
         })
     
     total = len(groups)

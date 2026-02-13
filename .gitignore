@@ -6,3 +6,4 @@ output/
 node_modules/
 audio/
 test-results/
+*.db

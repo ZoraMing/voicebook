@@ -11,6 +11,12 @@ try:
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
+    import warnings
+    from bs4 import XMLParsedAsHTMLWarning
+    
+    # 过滤 BeautifulSoup 的 XML 解析警告
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+    
     EPUB_AVAILABLE = True
 except ImportError:
     EPUB_AVAILABLE = False

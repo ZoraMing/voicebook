@@ -54,8 +54,7 @@ def export_book(
     
     return schemas.ExportResponse(
         success=True,
-        message=f"已开始后台导出任务，共 {completed_count} 个已合成段落。"
-                f"导出完成后可在 output/{book.title}/ 目录查看结果。"
+        message=f"已开始导出书籍《{book.title}》(ID: {book_id})。任务将在后台执行，完成后请刷新页面或查看 output 目录。"
     )
 
 

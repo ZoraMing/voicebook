@@ -17,9 +17,10 @@ lxml>=4.9.0
 # TTS 语音合成
 edge-tts>=6.1.0
 
-# 音频处理
+# 音频处理 还需要安装ffmpeg
 mutagen>=1.47.0
 pydub>=0.25.1
+pyaudioop
 
 # LLM 支持（可选，用于智能分章）
 openai>=1.0.0

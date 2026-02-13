@@ -26,7 +26,7 @@ def synthesize_book(
     book_id: int,
     background_tasks: BackgroundTasks,
     voice: str = "zh-CN-XiaoxiaoNeural",
-    max_concurrent: int = 5,
+    max_concurrent: int = 20,
     db: Session = Depends(get_db)
 ):
     """
@@ -34,7 +34,7 @@ def synthesize_book(
     
     - 请求会立即返回，合成任务在后台执行
     - 使用 /books/{book_id}/progress 端点查询进度
-    - max_concurrent: 并发数（默认5，可调整以加快速度）
+    - max_concurrent: 并发数（默认50，可调整以加快速度）
     """
     book = crud.get_book(db, book_id)
     if not book:

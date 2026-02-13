@@ -64,9 +64,10 @@ graph TD
 
 ### 后端 (Backend)
 - **Framework**: FastAPI + SQLAlchemy
-- **Language**: Python 3.12+
+- **Language**: Python 3.12+ (支持 3.13+)
 - **Media Processing**: FFmpeg
 - **TTS Engine**: Edge TTS (edge-tts)
+- **Audio Logic**: Pydub (针对 Python 3.13 需要 `audioop-lts`)
 
 ---
 
@@ -77,6 +78,7 @@ graph TD
 确保已安装 Python 3.12+ 和 Node.js 20+。
 
 ```bash
+python -m venv .venv
 # 激活 Python 虚拟环境
 # Windows
 .venv\Scripts\activate
@@ -85,13 +87,16 @@ source .venv/bin/activate
 
 # 安装后端依赖
 pip install -r requirements.txt
+
+# 针对 Python 3.13+ 用户 (必须安装否则无法合并音频)
+pip install audioop-lts
 ```
 
 ### 2. 启动后端服务
 
 ```bash
 # 在项目根目录下运行
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 后端服务将运行在 `http://localhost:8000`，API 文档位于 `/docs`。
 
@@ -117,6 +122,20 @@ npm run dev
 cd front
 npx playwright test
 ```
+
+### 5. CLI 快速导出工具 (New)
+
+如果你不想启动 Web 界面或后端服务，可以直接使用 CLI 工具导出已合成的书籍：
+
+```bash
+# 列出所有书籍 ID 并根据提示选择导出
+python cli_export.py
+
+# 或者直接指定书籍 ID 导出
+python cli_export.py 1
+```
+*该工具提供实时进度条（tqdm），适合大批量导出任务。*
+
 
 ---
 
@@ -148,3 +167,23 @@ output/
 ```
 
 您可以直接将文件夹导入网易云音乐或其他支持本地音乐的播放器，享受精确的歌词同步体验。
+
+---
+
+## ❓ 常见问题
+
+### 1. Python 3.13 报错 `No module named 'audioop'`
+这是由于 Python 3.13 移除了官方的 `audioop` 模块。
+**解决方法**：
+1. 运行 `pip install audioop-lts`。
+2. 项目已在 `cli_export.py` 和核心代码中集成了兼容性补丁，安装该库后即可正常运行。
+
+### 2. 导出时显示“音频合并失败”
+- 确保电脑已安装 **FFmpeg** 并已加入系统环境变量（PATH）。
+- 在终端输入 `ffmpeg -version` 确认其可用性。
+- 确保 `.venv` 环境中已正确安装 `pydub`。
+
+### 3. Edge TTS 合成超时
+- 检查网络连接。
+- 如果在受限网络环境，可以在 `app/config.py` 中配置 `TTS_PROXY`。
+

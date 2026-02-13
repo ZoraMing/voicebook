@@ -1,5 +1,22 @@
 import os
+import subprocess
+import shutil
+import sys
+from pathlib import Path
 from typing import List, Optional
+
+# Python 3.13+ audioop 兼容性补丁
+try:
+    import audioop
+except ImportError:
+    try:
+        import audioop_lts as audioop
+        sys.modules['audioop'] = audioop
+    except ImportError:
+        pass
+
+from app.config import get_settings
+
 try:
     from mutagen.mp3 import MP3
     MUTAGEN_AVAILABLE = True
@@ -25,22 +42,38 @@ def merge_audio_to_wav(
     channels: int = 1
 ) -> bool:
     """
-    将多个音频文件合并为单个 WAV 文件。
-    使用低采样率和单声道保持小体积。
+    向后兼容的 WAV 合并函数，内部调用 merge_audio。
+    """
+    return merge_audio(audio_paths, output_path, output_format="wav",
+                       sample_rate=sample_rate, channels=channels)
+
+
+def merge_audio(
+    audio_paths: List[str],
+    output_path: str,
+    output_format: str = "mp3",
+    sample_rate: int = 24000,
+    channels: int = 1,
+    bitrate: str = "64k"
+) -> bool:
+    """
+    将多个音频文件合并为单个音频文件。
     
     Args:
         audio_paths: 音频文件路径列表
-        output_path: 输出 WAV 文件路径
-        sample_rate: 采样率（默认 16kHz）
+        output_path: 输出文件路径
+        output_format: 输出格式 ("mp3", "wav", "ogg")
+        sample_rate: 采样率（默认 24kHz，有声书足够）
         channels: 声道数（默认单声道）
+        bitrate: MP3 比特率（默认 64k，有声书推荐值）
     
     Returns:
         是否成功
     """
     try:
         from pydub import AudioSegment
-    except ImportError:
-        print("[导出] 错误: 需要安装 pydub 库: pip install pydub")
+    except Exception as e:
+        print(f"[导出] 报错详情: {e}")
         return False
     
     try:
@@ -49,21 +82,17 @@ def merge_audio_to_wav(
         skipped = 0
         
         for audio_path in audio_paths:
-            # 调试信息
-            # print(f"[合并调试] 检查路径: {audio_path}")
             if not audio_path:
                 skipped += 1
                 continue
                 
             full_path = os.path.abspath(audio_path)
             if not os.path.exists(full_path):
-                # print(f"[合并调试] 物理文件不存在: {full_path}")
                 skipped += 1
                 continue
             
             # 加载音频片段
             try:
-                # print(f"[合并调试] 正在加载: {audio_path}")
                 segment = AudioSegment.from_file(full_path)
                 combined += segment
             except Exception as e:
@@ -78,17 +107,23 @@ def merge_audio_to_wav(
         if skipped > 0:
             print(f"[导出] 跳过了 {skipped} 个无音频的段落")
         
-        # 转换参数：低采样率、单声道、16位
+        # 转换参数：采样率、单声道
         combined = combined.set_frame_rate(sample_rate)
         combined = combined.set_channels(channels)
-        combined = combined.set_sample_width(2)  # 16位
         
-        # 导出为 WAV
-        combined.export(output_path, format="wav")
+        # 导出
+        export_params = {"format": output_format}
+        if output_format == "mp3":
+            export_params["bitrate"] = bitrate
+        elif output_format == "wav":
+            combined = combined.set_sample_width(2)  # 16位 WAV
+        
+        combined.export(output_path, **export_params)
         
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
         duration_min = len(combined) / 60000
-        print(f"[导出] WAV 已生成: {output_path} "
+        fmt_label = output_format.upper()
+        print(f"[导出] {fmt_label} 已生成: {output_path} "
               f"(时长: {duration_min:.1f}分钟, 大小: {file_size_mb:.1f}MB)")
         
         return True
@@ -98,3 +133,4 @@ def merge_audio_to_wav(
         import traceback
         traceback.print_exc()
         return False
+
