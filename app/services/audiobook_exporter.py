@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, crud
 from app.config import get_settings
 from app.utils.text import split_to_sentences, sanitize_filename
-from app.utils.audio import merge_audio_to_wav, merge_audio
+from app.utils.audio import merge_audio_to_wav, merge_audio, tag_mp3_metadata
 from app.utils.files import get_export_dir, get_zip_path, create_zip_archive, cleanup_book_files
 
 logger = logging.getLogger(__name__)
@@ -298,6 +298,16 @@ def export_book(
             
             if mp3_success:
                 success_count += 1
+                # 写入 ID3 元数据标签（专辑、作者、封面）
+                tag_mp3_metadata(
+                    mp3_path=str(mp3_path),
+                    title=f"{book.title} · {folder_name}",
+                    album=book.title,
+                    artist=book.author or "",
+                    segment_name=folder_name,
+                    track=success_count,
+                    total_tracks=len(groups),
+                )
                 results.append({
                     'folder': folder_name,
                     'chapters': group['chapter_indices'],

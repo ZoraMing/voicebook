@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from app.database import SessionLocal, init_db
 from app import crud, models
 from app.services import audiobook_exporter, tts
-from app.utils.audio import merge_audio
+from app.utils.audio import merge_audio, tag_mp3_metadata
 from app.utils.files import get_zip_path, create_zip_archive
 from app.config import get_settings
 
@@ -156,6 +156,7 @@ def export_with_progress(db, book_id):
     
     total_steps = len(groups)
     success_count = 0
+    tagged_count  = 0
     
     # 2. Process with Progress Bar
     pbar = tqdm(groups, desc="导出进度", unit="段")
@@ -186,10 +187,26 @@ def export_with_progress(db, book_id):
 
         # 合并音频为 MP3
         audio_paths = [p.audio_path for p in group['paragraphs']]
-        wav_success = merge_audio(audio_paths, str(mp3_path), output_format="mp3", bitrate="64k")
+        merge_success = merge_audio(audio_paths, str(mp3_path), output_format="mp3", bitrate="64k")
         
-        if wav_success:
+        if merge_success:
             success_count += 1
+            # 写入 ID3 元数据标签（专辑、作者、封面）
+            tagged = tag_mp3_metadata(
+                mp3_path=str(mp3_path),
+                title=f"{book.title} · {folder_name}",
+                album=book.title,
+                artist=book.author or "",
+                segment_name=folder_name,
+                track=success_count,
+                total_tracks=total_steps,
+            )
+            if tagged:
+                tagged_count += 1
+                pbar.write(f"  🏷️  元数据已写入: {folder_name}")
+            else:
+                pbar.write(f"  ⚠️  元数据写入跳过（mutagen 不可用）: {folder_name}")
+
         else:
             # Cleanup on failure
             if lrc_path.exists():
