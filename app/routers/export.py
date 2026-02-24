@@ -2,16 +2,20 @@
 有声书导出路由
 """
 import os
-import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app import crud, schemas
+from app import crud, schemas, models
 from app.services import audiobook_exporter
+from app.config import get_settings
+from app.utils.files import get_export_dir, create_zip_archive
+from app.utils.text import sanitize_filename
 
+settings = get_settings()
 router = APIRouter(prefix="/api", tags=["导出"])
 
 
@@ -32,14 +36,11 @@ def export_book(
         raise HTTPException(404, "书籍不存在")
     
     # 检查是否有已完成的音频
-    from sqlalchemy import func
-    from app import models
-    
     completed_count = db.query(func.count(models.Paragraph.id)).filter(
         models.Paragraph.book_id == book_id,
         models.Paragraph.tts_status == "completed"
     ).scalar()
-    
+
     if completed_count == 0:
         return schemas.ExportResponse(
             success=False,
@@ -85,18 +86,13 @@ def download_export(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(404, "书籍不存在")
     
-    from app.config import get_settings
-    settings = get_settings()
-    output_base_dir = Path(settings.OUTPUT_DIR)
-    
-    from app.utils.files import get_export_dir, create_zip_archive
-    book_dir = get_export_dir(output_base_dir, book.title)
+    book_dir = get_export_dir(Path(settings.OUTPUT_DIR), book.title)
     
     if not book_dir.exists():
         raise HTTPException(404, "导出文件不存在，请先执行导出")
     
     # 生成 ZIP 文件
-    zip_path = create_zip_archive(output_base_dir, book.title)
+    zip_path = create_zip_archive(Path(settings.OUTPUT_DIR), book.title)
     
     if not zip_path:
          raise HTTPException(500, "创建压缩包失败")
@@ -111,19 +107,13 @@ def download_export(book_id: int, db: Session = Depends(get_db)):
 @router.get("/books/{book_id}/export/files")
 def get_export_files(book_id: int, db: Session = Depends(get_db)):
     """
-    获取导出文件列表 (用于在线播放)
+    获取导出文件列表（用于在线播放）
     """
     book = crud.get_book(db, book_id)
     if not book:
         raise HTTPException(404, "书籍不存在")
     
-    from app.config import get_settings
-    settings = get_settings()
     output_base_dir = Path(settings.OUTPUT_DIR)
-
-    from app.utils.files import get_export_dir
-    from app.utils.text import sanitize_filename
-    
     book_dir = get_export_dir(output_base_dir, book.title)
     safe_title = sanitize_filename(book.title)
     
@@ -131,28 +121,23 @@ def get_export_files(book_id: int, db: Session = Depends(get_db)):
         return {"files": []}
     
     files = []
-    # 遍历目录下的子文件夹（每个段落一个文件夹）
-    if book_dir.exists():
-        for item in sorted(os.listdir(book_dir)):
-            item_path = book_dir / item
-            if item_path.is_dir():
-                # 检查子目录内的文件: {folder_name}.wav
-                wav_name = f"{item}.wav"
-                lrc_name = f"{item}.lrc"
-                
-                wav_file = item_path / wav_name
-                lrc_file = item_path / lrc_name
-                
-                if wav_file.exists():
-                    group_data = {
-                        "name": item,
-                        "wav": f"/outputs/{safe_title}/{item}/{wav_name}",
-                        "lrc": None
-                    }
-                    
-                    if lrc_file.exists():
-                        group_data["lrc"] = f"/outputs/{safe_title}/{item}/{lrc_name}"
-                    
-                    files.append(group_data)
+    # 遍历目录下的子文件夹（每个段落组一个文件夹）
+    for item in sorted(os.listdir(book_dir)):
+        item_path = book_dir / item
+        if not item_path.is_dir():
+            continue
+        
+        mp3_name = f"{item}.mp3"
+        lrc_name = f"{item}.lrc"
+        mp3_file = item_path / mp3_name
+        lrc_file = item_path / lrc_name
+        
+        if mp3_file.exists():
+            group_data = {
+                "name": item,
+                "mp3": f"/outputs/{safe_title}/{item}/{mp3_name}",
+                "lrc": f"/outputs/{safe_title}/{item}/{lrc_name}" if lrc_file.exists() else None
+            }
+            files.append(group_data)
     
     return {"files": files}

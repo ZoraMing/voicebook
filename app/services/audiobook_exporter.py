@@ -1,3 +1,4 @@
+import logging
 import shutil
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
@@ -8,6 +9,8 @@ from app.config import get_settings
 from app.utils.text import split_to_sentences, sanitize_filename
 from app.utils.audio import merge_audio_to_wav, merge_audio
 from app.utils.files import get_export_dir, get_zip_path, create_zip_archive, cleanup_book_files
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -100,38 +103,6 @@ def _get_group_folder_name(chapter_indices: List[int]) -> str:
     else:
         return f"chapters{chapter_indices[0]}-{chapter_indices[-1]}"
 
-
-def _split_to_sentences(text: str) -> List[str]:
-    """
-    将文本按句子拆分。
-    仅支持在明确的终止符号（句号、问号、感叹号）处拆分。
-    """
-    if not text:
-        return []
-
-    # 1. 核心拆分逻辑：识别主要句末标点
-    # 仅保留：。！？；!?;… 以及点号 .
-    # 使用后行断言 (?<=[...]) 保留标点；
-    # 对于点号 .，使用否定预查 (?![0-9a-zA-Z]) 确保后面不是数字或字母，避免在 1.7 或 e.g. 处断开
-    pattern = r'(?<=[。！？；!?;…])|(?<=\.(?![0-9a-zA-Z]))'
-    parts = re.split(pattern, text)
-    
-    # 2. 清理空白项
-    raw_sentences = [p.strip() for p in parts if p.strip()]
-    
-    # 3. 后处理：合并孤立的括号引用 (例如注脚数字 "(35)")
-    result = []
-    for s in raw_sentences:
-        # 正则检查是否仅仅是括号包裹的数字，形如 (1), [42], (35)
-        is_reference = re.match(r'^[\(\[（【]\d+[\)\]）】]$', s)
-        
-        if is_reference and result:
-            # 将引用内容直接合并到上一句末尾
-            result[-1] = f"{result[-1]} {s}"
-        else:
-            result.append(s)
-            
-    return result if result else [text]
 
 
 def generate_lrc(
@@ -275,54 +246,120 @@ def export_book(
         chapter_titles = ", ".join(
             c.title for c in group['chapters'] if c.title
         )
-        print(f"[导出] 段 {i+1}/{len(groups)}: {folder_name} "
-              f"(预估 {duration_min:.1f} 分钟, 章节: {chapter_titles})")
-        
-        # 生成 LRC 歌词
-        lrc_content = generate_lrc(
-            group['paragraphs'],
-            book_title=book.title,
-            author=book.author
+        logger.info(
+            "[导出] 段 %d/%d: %s (预估 %.1f 分钟, 章节: %s)",
+            i + 1, len(groups), folder_name, duration_min, chapter_titles
         )
-        with open(lrc_path, 'w', encoding='utf-8') as f:
-            f.write(lrc_content)
-        print(f"[导出] LRC 已生成: {lrc_path}")
         
-        # 合并音频为 MP3
-        audio_paths = [p.audio_path for p in group['paragraphs']]
-        wav_success = merge_audio(audio_paths, str(mp3_path), output_format="mp3", bitrate="64k")
-        
-        if wav_success:
-            success_count += 1
-        else:
-            fail_count += 1
-        
-        if not wav_success:
-            # 如果音频生成失败，清理已生成的 LRC 和空文件夹
-            if lrc_path.exists():
-                lrc_path.unlink()
-            if segment_dir.exists() and not any(segment_dir.iterdir()):
-                segment_dir.rmdir()
+        try:
+            # 验证有效音频路径（存在且大小 > 0）
+            audio_paths = [
+                p.audio_path for p in group['paragraphs']
+                if p.audio_path and Path(p.audio_path).exists() and Path(p.audio_path).stat().st_size > 0
+            ]
+            total_para = len(group['paragraphs'])
+            skipped = total_para - len(audio_paths)
+            if skipped > 0:
+                logger.warning(
+                    "[导出] ⚠️ 段 %s：%d/%d 个段落缺少有效音频文件，将跳过。",
+                    folder_name, skipped, total_para
+                )
             
-            print(f"[导出] 警告: 音频生成失败，跳过该段: {folder_name}")
+            if not audio_paths:
+                logger.warning(
+                    "[导出] ⚠️ 段 %s：所有段落均无有效音频，跳过该段。",
+                    folder_name
+                )
+                fail_count += 1
+                results.append({
+                    'folder': folder_name,
+                    'chapters': group['chapter_indices'],
+                    'duration_ms': group['total_duration_ms'],
+                    'mp3_generated': False,
+                    'lrc_generated': False,
+                    'mp3_path': None,
+                    'lrc_path': None,
+                    'error': '所有段落均无有效音频'
+                })
+                continue
+            
+            # 生成 LRC 歌词（音频验证通过后再写 LRC）
+            lrc_content = generate_lrc(
+                group['paragraphs'],
+                book_title=book.title,
+                author=book.author
+            )
+            with open(lrc_path, 'w', encoding='utf-8') as f:
+                f.write(lrc_content)
+            logger.info("[导出] LRC 已生成: %s", lrc_path)
+            
+            # 合并音频为 MP3
+            mp3_success = merge_audio(audio_paths, str(mp3_path), output_format="mp3", bitrate="64k")
+            
+            if mp3_success:
+                success_count += 1
+                results.append({
+                    'folder': folder_name,
+                    'chapters': group['chapter_indices'],
+                    'duration_ms': group['total_duration_ms'],
+                    'mp3_generated': True,
+                    'lrc_generated': True,
+                    'mp3_path': str(mp3_path),
+                    'lrc_path': str(lrc_path)
+                })
+            else:
+                fail_count += 1
+                # 音频合并失败：清理已生成的 LRC 和空文件夹
+                if lrc_path.exists():
+                    lrc_path.unlink()
+                try:
+                    segment_dir.rmdir()  # 仅在目录为空时才删除
+                except OSError:
+                    pass
+                logger.warning("[导出] ⚠️ 音频合并失败，已清理 LRC，跳过该段: %s", folder_name)
+                results.append({
+                    'folder': folder_name,
+                    'chapters': group['chapter_indices'],
+                    'duration_ms': group['total_duration_ms'],
+                    'mp3_generated': False,
+                    'lrc_generated': False,
+                    'mp3_path': None,
+                    'lrc_path': None,
+                    'error': '音频合并失败'
+                })
         
-        results.append({
-            'folder': folder_name,
-            'chapters': group['chapter_indices'],
-            'duration_ms': group['total_duration_ms'],
-            'wav_generated': wav_success,
-            'lrc_generated': True if wav_success else False,  # 标记为 False 因为已删除
-            'wav_path': str(wav_path) if wav_success else None,
-            'lrc_path': str(lrc_path) if wav_success else None
-        })
+        except Exception as e:
+            fail_count += 1
+            # 清理当前 group 的残留文件
+            for f_path in [lrc_path, mp3_path]:
+                if f_path.exists():
+                    try:
+                        f_path.unlink()
+                    except OSError:
+                        pass
+            try:
+                segment_dir.rmdir()
+            except OSError:
+                pass
+            logger.error("[导出] ❌ 段 %s 处理异常: %s", folder_name, e, exc_info=True)
+            results.append({
+                'folder': folder_name,
+                'chapters': group['chapter_indices'],
+                'duration_ms': group['total_duration_ms'],
+                'mp3_generated': False,
+                'lrc_generated': False,
+                'mp3_path': None,
+                'lrc_path': None,
+                'error': str(e)
+            })
     
     total = len(groups)
     message = f"导出完成: {success_count}/{total} 个音频段成功"
     if fail_count > 0:
-        message += f", {fail_count} 个失败（可能缺少已合成的音频）"
+        message += f"，{fail_count} 个失败（部分段落缺少已合成的音频，请检查合成状态后重新导出）"
     
-    print(f"[导出] {message}")
-    print(f"[导出] 输出目录: {book_dir}")
+    logger.info("[导出] %s", message)
+    logger.info("[导出] 输出目录: %s", book_dir)
     
     return {
         'success': success_count > 0,

@@ -3,6 +3,7 @@ TTS 语音合成服务
 使用 Provider 模式支持多种 TTS 引擎（edge-tts / API / 本地模型）
 """
 import asyncio
+import logging
 import os
 import re
 from pathlib import Path
@@ -14,11 +15,16 @@ from app.config import get_settings
 from .tts_providers.base import TTSProvider
 from .tts_providers.edge import EdgeTTSProvider
 
+logger = logging.getLogger(__name__)
+
 settings = get_settings()
 
 # 音频存储目录（从统一配置获取）
 AUDIO_DIR = Path(settings.AUDIO_DIR)
 AUDIO_DIR.mkdir(exist_ok=True)
+
+# 后台任务：合成失败后最多重试轮次
+BACKGROUND_RETRY_ROUNDS = 2
 
 
 class TTSFactory:
@@ -91,16 +97,23 @@ async def synthesize_paragraph(
         # 生成音频
         audio_path = get_audio_path(paragraph.book_id, paragraph.id)
         result = await tts.generate_audio(clean_content, voice, audio_path)
-        
+
         # 处理返回值：可能是 bool 或 (bool, timings)
         if isinstance(result, tuple):
             success, timings = result
         else:
             success = result
             timings = None
-        
+
         if not success:
-            crud.update_paragraph_status(db, paragraph.id, "failed", "TTS 合成失败")
+            crud.update_paragraph_status(db, paragraph.id, "failed", "TTS 合成失败（Provider 返回失败）")
+            return False
+
+        # 二次验证：确认磁盘上的音频文件存在且大小正常
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 512:
+            error_msg = f"音频文件缺失或过小: {audio_path}"
+            logger.warning("[TTS] ⚠️ %s", error_msg)
+            crud.update_paragraph_status(db, paragraph.id, "failed", error_msg)
             return False
 
         # 获取音频时长
@@ -119,6 +132,7 @@ async def synthesize_paragraph(
         return True
 
     except Exception as e:
+        logger.error("[TTS] ❌ 段落 %d 合成异常: %s", paragraph.id, e)
         crud.update_paragraph_status(db, paragraph.id, "failed", str(e))
         return False
 
@@ -154,27 +168,103 @@ async def _synthesize_batch_async(
     }
 
 
+def _retry_synthesis_loop(
+    db: Session,
+    book_id: int,
+    voice: str,
+    max_concurrent: int,
+    loop: asyncio.AbstractEventLoop
+) -> None:
+    """
+    带轮次重试的合成主循环。
+    第 1 轮处理 pending，后续轮次处理 failed，最多 BACKGROUND_RETRY_ROUNDS 轮重试。
+    """
+    # 第 1 轮：待合成段落
+    paragraphs = crud.get_pending_paragraphs(db, book_id)
+    if not paragraphs:
+        logger.info("[TTS] 书籍 %d 没有待合成段落，跳过。", book_id)
+        return
+
+    result = loop.run_until_complete(
+        _synthesize_batch_async(db, paragraphs, voice, max_concurrent)
+    )
+    logger.info(
+        "[TTS] 第 1 轮合成完成 — 成功: %d / %d，失败: %d",
+        result['completed'], result['total'], result['failed']
+    )
+
+    # 后续轮次：重试 failed 段落
+    for round_num in range(2, BACKGROUND_RETRY_ROUNDS + 2):
+        failed_paragraphs = db.query(models.Paragraph).filter(
+            models.Paragraph.book_id == book_id,
+            models.Paragraph.tts_status == 'failed'
+        ).all()
+
+        if not failed_paragraphs:
+            logger.info("[TTS] 没有失败段落，停止重试。")
+            break
+
+        logger.warning(
+            "[TTS] ⚠️ 第 %d 轮重试 — 共 %d 个失败段落",
+            round_num, len(failed_paragraphs)
+        )
+
+        # 重置状态为 pending 以便重新合成
+        for p in failed_paragraphs:
+            crud.update_paragraph_status(db, p.id, "pending")
+        db.commit()
+
+        result = loop.run_until_complete(
+            _synthesize_batch_async(db, failed_paragraphs, voice, max_concurrent)
+        )
+        logger.info(
+            "[TTS] 第 %d 轮重试完成 — 成功: %d / %d，失败: %d",
+            round_num, result['completed'], result['total'], result['failed']
+        )
+
+        if result['failed'] == 0:
+            break
+
+    # 记录最终统计
+    from sqlalchemy import func
+    status_counts = db.query(
+        models.Paragraph.tts_status,
+        func.count(models.Paragraph.id)
+    ).filter(
+        models.Paragraph.book_id == book_id
+    ).group_by(models.Paragraph.tts_status).all()
+    counts = {s: c for s, c in status_counts}
+    logger.info(
+        "[TTS] 书籍 %d 最终合成结果 — 完成: %d，失败: %d，待处理: %d",
+        book_id,
+        counts.get('completed', 0),
+        counts.get('failed', 0),
+        counts.get('pending', 0)
+    )
+
+    # 如果仍有失败段落，打印警告
+    if counts.get('failed', 0) > 0:
+        logger.warning(
+            "[TTS] ⚠️ 书籍 %d 仍有 %d 个段落合成失败，请检查网络连接或重新运行合成。",
+            book_id, counts.get('failed', 0)
+        )
+
+
 def synthesize_book_background(
     book_id: int,
     voice: str = "zh-CN-XiaoxiaoNeural",
     max_concurrent: int = 5
 ):
     """
-    后台任务专用的书籍合成函数
+    后台任务专用的书籍合成函数（带轮次重试）
     """
     from app.database import SessionLocal
     db = SessionLocal()
     try:
-        paragraphs = crud.get_pending_paragraphs(db, book_id)
-        if not paragraphs:
-            return
-
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(
-                _synthesize_batch_async(db, paragraphs, voice, max_concurrent)
-            )
+            _retry_synthesis_loop(db, book_id, voice, max_concurrent, loop)
             crud.update_book_tts_progress(db, book_id)
         finally:
             loop.close()
@@ -189,10 +279,9 @@ def synthesize_batch_background(
     max_concurrent: int = 5
 ):
     """
-    后台任务：批量合成指定段落
+    后台任务：批量合成指定段落（带一次重试）
     """
     from app.database import SessionLocal
-    from app import models
     db = SessionLocal()
     try:
         paragraphs = db.query(models.Paragraph).filter(
@@ -209,6 +298,38 @@ def synthesize_batch_background(
             result = loop.run_until_complete(
                 _synthesize_batch_async(db, paragraphs, voice, max_concurrent)
             )
+            logger.info(
+                "[TTS] 批量合成第 1 轮完成 — 成功: %d / %d，失败: %d",
+                result['completed'], result['total'], result['failed']
+            )
+
+            # 重试一次失败的段落
+            if result['failed'] > 0:
+                failed_paragraphs = db.query(models.Paragraph).filter(
+                    models.Paragraph.id.in_(paragraph_ids),
+                    models.Paragraph.tts_status == 'failed'
+                ).all()
+                if failed_paragraphs:
+                    logger.warning(
+                        "[TTS] ⚠️ 批量合成重试 — %d 个段落失败，开始第 2 轮",
+                        len(failed_paragraphs)
+                    )
+                    for p in failed_paragraphs:
+                        crud.update_paragraph_status(db, p.id, "pending")
+                    db.commit()
+                    result2 = loop.run_until_complete(
+                        _synthesize_batch_async(db, failed_paragraphs, voice, max_concurrent)
+                    )
+                    logger.info(
+                        "[TTS] 批量合成第 2 轮完成 — 成功: %d / %d，失败: %d",
+                        result2['completed'], result2['total'], result2['failed']
+                    )
+                    if result2['failed'] > 0:
+                        logger.warning(
+                            "[TTS] ⚠️ 批量合成仍有 %d 个段落失败。",
+                            result2['failed']
+                        )
+
             crud.update_book_tts_progress(db, book_id)
         finally:
             loop.close()

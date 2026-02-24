@@ -14,8 +14,8 @@ from app.services.audiobook_exporter import (
     group_chapters_by_duration,
     generate_lrc,
     export_book,
-    _split_to_sentences,
 )
+from app.utils.text import split_to_sentences
 
 
 def test_sentence_split():
@@ -32,7 +32,7 @@ def test_sentence_split():
     ]
     
     for text in test_cases:
-        sentences = _split_to_sentences(text)
+        sentences = split_to_sentences(text)
         print(f"\n原文: {text}")
         print(f"拆分: {sentences}")
     

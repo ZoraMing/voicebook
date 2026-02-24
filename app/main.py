@@ -1,7 +1,10 @@
 """
 有声书制作系统 - FastAPI 主应用
 """
-import os, sys
+import logging
+import os
+import sys
+
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,12 +50,10 @@ app.include_router(export.router)
 def startup():
     """启动时初始化数据库"""
     init_db()
-    print("=" * 60)
-    print(f"🎙️  {settings.PROJECT_NAME} v{settings.VERSION}")
-    print("=" * 60)
-    print(f"📄 API 文档: http://localhost:8000/docs")
-    print(f"🔊 TTS 引擎: {settings.TTS_PROVIDER}")
-    print("=" * 60)
+    logger = logging.getLogger(__name__)
+    logger.info("%s v%s 已启动", settings.PROJECT_NAME, settings.VERSION)
+    logger.info("API 文档: http://localhost:8000/docs")
+    logger.info("TTS 引擎: %s", settings.TTS_PROVIDER)
 
 
 @app.get("/")
@@ -72,9 +73,6 @@ def health():
 
 
 if __name__ == "__main__":
-    # python -m uvicorn app.main:app --port 8000 --host 0.0.0.0 --reload
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-    # init_db()
-    # print("数据库初始化完成")
 
