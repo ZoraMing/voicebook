@@ -16,7 +16,14 @@ const getLocalIps = () => {
 };
 
 const localIps = getLocalIps();
-const allowedOrigins = ["127.0.0.1:3000", "localhost:3000", ...localIps.map((ip) => `${ip}:3000`)];
+const allowedOrigins = [
+  "127.0.0.1:3000", 
+  "localhost:3000", 
+  "127.0.0.1", 
+  "localhost", 
+  ...localIps.map((ip) => `${ip}:3000`),
+  ...localIps
+];
 
 const nextConfig: NextConfig = {
   devIndicators: false,

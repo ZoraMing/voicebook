@@ -157,6 +157,8 @@ def generate_lrc(
                         
                         text = timing['text'].strip()
                         if text:
+                            # 彻底删除文本中的所有空格
+                            text = text.replace(" ", "")
                             lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}]{text}")
                     
                     # 累加段落时长
@@ -180,7 +182,10 @@ def generate_lrc(
             seconds = int((current_time_ms % 60000) // 1000)
             centiseconds = int((current_time_ms % 1000) // 10)
             
-            lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}]{sentence}")
+            # 彻底删除文本中的所有空格
+            sentence_text = sentence.replace(" ", "")
+            if sentence_text:
+                lines.append(f"[{minutes:02d}:{seconds:02d}.{centiseconds:02d}]{sentence_text}")
             
             # 按字数比例推进时间
             sentence_duration = int(para_duration * len(sentence) / total_chars)

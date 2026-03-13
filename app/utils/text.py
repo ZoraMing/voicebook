@@ -44,10 +44,14 @@ def sanitize_filename(name: str) -> str:
 
 
 def clean_text_for_tts(text: str) -> str:
-    """清理文本中不适合朗读的标点符号，替换为空格以防止朗读其名称"""
+    """清理文本中不适合朗读的标点符号，并彻底删除所有空白字符"""
     if not text:
         return ""
-    # 替换这些符号为空格: _ / \ | ~ * # % > - ” “ "
+    # 1. 删除这些符号: _ / \ | ~ * # % > - ” “ "
     # 这些通常是 Markdown 标识符或装饰符，朗读出来会影响流利度
-    text = re.sub(r'[_/\\|~\*#%>\-”“"]', ' ', text)
-    return ' '.join(text.split())
+    text = re.sub(r'[_/\\|~\*#%>\-”“"]', '', text)
+    
+    # 2. 彻底删除所有空白字符（空格、换行、制表符等）
+    text = re.sub(r'\s+', '', text)
+    
+    return text

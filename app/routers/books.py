@@ -5,7 +5,7 @@ import os
 import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -95,7 +95,12 @@ def list_ebook_files():
 @router.get("", response_model=List[schemas.Book])
 def get_books(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """获取书籍列表"""
-    return crud.get_books(db, skip=skip, limit=limit)
+    books = crud.get_books(db, skip=skip, limit=limit)
+    for b in books:
+        if b.total_paragraphs == 0:
+            crud.update_book_stats(db, b.id)
+        crud.update_book_tts_progress(db, b.id)
+    return books
 
 
 @router.get("/{book_id}", response_model=schemas.BookWithChapters)
@@ -104,6 +109,9 @@ def get_book(book_id: int, db: Session = Depends(get_db)):
     book = crud.get_book(db, book_id)
     if not book:
         raise HTTPException(404, "书籍不存在")
+    crud.update_book_stats(db, book_id)
+    crud.update_book_tts_progress(db, book_id)
+    db.refresh(book)
     return book
 
 
@@ -133,7 +141,31 @@ def get_book_chapters(book_id: int, db: Session = Depends(get_db)):
     book = crud.get_book(db, book_id)
     if not book:
         raise HTTPException(404, "书籍不存在")
-    return crud.get_book_chapters(db, book_id)
+    chapters = crud.get_book_chapters(db, book_id)
+    
+    # 手动或通过ORM附带章节进度，此时直接在接口返回组装计算避免大规模重构数据库模型
+    from app.models import Paragraph
+    from sqlalchemy import func
+    
+    # 聚合查询每个章节的已完成段落数
+    completed_counts = db.query(
+        Paragraph.chapter_id, 
+        func.count(Paragraph.id)
+    ).filter(
+        Paragraph.book_id == book_id,
+        Paragraph.tts_status == 'completed'
+    ).group_by(Paragraph.chapter_id).all()
+    
+    count_map = {chapter_id: count for chapter_id, count in completed_counts}
+    
+    result = []
+    for c in chapters:
+        # Schema 中已含 completed_paragraphs, 使用对应实体的拷贝值修改
+        c_dict = schemas.ChapterSimple.model_validate(c).model_dump()
+        c_dict['completed_paragraphs'] = count_map.get(c.id, 0)
+        result.append(c_dict)
+        
+    return result
 
 
 @router.get("/{book_id}/paragraphs", response_model=List[schemas.Paragraph])
@@ -143,6 +175,42 @@ def get_book_paragraphs(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(404, "书籍不存在")
     return crud.get_book_paragraphs(db, book_id)
+
+
+@router.get("/{book_id}/progress")
+def get_book_progress(book_id: int, db: Session = Depends(get_db)):
+    """获取书籍详细的生成进度(各状态段落数)"""
+    from app.models import Paragraph
+    total = db.query(Paragraph).filter(Paragraph.book_id == book_id).count()
+    completed = db.query(Paragraph).filter(
+        Paragraph.book_id == book_id, 
+        Paragraph.tts_status == "completed"
+    ).count()
+    failed = db.query(Paragraph).filter(
+        Paragraph.book_id == book_id,
+        Paragraph.tts_status == "failed"
+    ).count()
+    return {
+        "progress": (completed / total * 100) if total > 0 else 0,
+        "total_paragraphs": total,
+        "completed": completed,
+        "failed": failed
+    }
+
+
+@router.get("/{book_id}/cover")
+def get_book_cover(book_id: int, db: Session = Depends(get_db)):
+    """获取动态生成的封面图字节流"""
+    book = crud.get_book(db, book_id)
+    if not book:
+        raise HTTPException(404, "书籍不存在")
+    
+    from app.utils.audio import _generate_cover_image
+    cover_bytes = _generate_cover_image(book.title, book.author or "Unknown", "", size=500)
+    
+    return Response(content=cover_bytes, media_type="image/jpeg", headers={
+        "Cache-Control": "public, max-age=604800"
+    })
 
 
 @router.get("/chapters/{chapter_id}/paragraphs", response_model=List[schemas.Paragraph])

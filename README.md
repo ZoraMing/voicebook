@@ -1,77 +1,27 @@
-# 🎙️ VoiceBook - 智能有声书制作系统 (v2.2.0)
+# 🎙️ VoiceBook - 智能有声书制作系统
 
 VoiceBook 是一个现代化的有声书制作平台，集成了智能文本解析、高精度语音合成与可视化的编辑管理功能。它能够将电子书（PDF/EPUB/TXT/MD）转换为结构化的音频内容，支持逐段精细调整、批量合成导出，并提供极致的 Web Studio 编辑体验。
 
-## 🌟 核心特性 (v2.2 更新)
+## 核心特性
 
-### 🎨 现代化 Web Studio
+### 现代化 Web Studio
 - **沉浸式编辑体验**: 基于 **Next.js 16** 和 **Tailwind CSS v4** 构建的全新界面，支持夜间模式与响应式设计。
 - **实时预览与编辑**: 所见即所得的段落编辑器，支持文本修改、语音角色切换与实时试听。
 - **智能进度追踪**: 全局进度条实时反馈合成状态，支持多任务并发处理。
 
-### ⚡ 高效合成工作流
+### 高效合成工作流
 - **批量合成引擎**: 支持**全书**、**单章**或**多选段落**的一键批量合成。
 - **高精度 TTS**: 集成 Microsoft Edge TTS，支持 **WordBoundary** 级时间戳，实现毫秒级音画同步。
 - **异步并发架构**: 后端采用 FastAPI 异步任务队列，支持大规模文本并发处理，稳定高效。
 
-### 📚 智能内容管理
+### 智能内容管理
 - **多格式解析**: 完美支持 PDF、EPUB、TXT 和 Markdown 格式，自动识别目录结构与章节。
 - **智能分章**: 内置 LLM 辅助解析（可选），智能优化断句与章节划分。
 - **高品质导出**: 一键导出为按章节合并的 WAV 音频与精确时间戳 LRC 歌词文件，完美适配主流音乐播放器。
 
 ---
 
-## 🏗️ 系统架构
-
-```mermaid
-graph TD
-    User[用户] --> |Web 交互| WebUI
-    
-    subgraph "Frontend (Next.js 16)"
-        WebUI[VoiceBook Studio]
-        State[SWR 状态管理]
-        Player[全局音频播放器]
-    end
-    
-    WebUI --> |REST API| API
-    
-    subgraph "Backend (FastAPI)"
-        API[API 网关]
-        Worker[后台任务队列]
-        Parser[电子书解析器]
-        TTS[TTS 合成引擎]
-        Export[音频导出服务]
-    end
-    
-    subgraph "Storage"
-        DB[(SQLite)]
-        FS[文件系统 (audio/output)]
-    end
-    
-    API --> DB & FS
-    Worker --> TTS
-    TTS --> FS
-```
-
-## 🛠️ 技术栈
-
-### 前端 (Frontend)
-- **Framework**: Next.js 16 (App Router)
-- **Styling**: Tailwind CSS v4
-- **State Management**: SWR (Stale-While-Revalidate)
-- **Icons**: Lucide React
-- **Testing**: Playwright (E2E)
-
-### 后端 (Backend)
-- **Framework**: FastAPI + SQLAlchemy
-- **Language**: Python 3.12+ (支持 3.13+)
-- **Media Processing**: FFmpeg
-- **TTS Engine**: Edge TTS (edge-tts)
-- **Audio Logic**: Pydub (针对 Python 3.13 需要 `audioop-lts`)
-
----
-
-## 🚀 快速启动
+## 快速启动
 
 ### 1. 环境准备
 
@@ -92,98 +42,60 @@ pip install -r requirements.txt
 pip install audioop-lts
 ```
 
-### 2. 启动后端服务
+### 2. 启动系统
 
+您可以同时通过 Web 界面和 CLI 命令行工具使用系统。
+
+**启动后端与前端：**
 ```bash
-# 在项目根目录下运行
+# 启动后端 (Terminal 1)
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-后端服务将运行在 `http://localhost:8000`，API 文档位于 `/docs`。
 
-### 3. 启动前端 Studio
-
-```bash
-# 进入前端目录
+# 启动前端 Studio (Terminal 2)
 cd front
-
-# 安装依赖
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
-访问 `http://localhost:3000` 即可进入 VoiceBook Studio。
 
-### 4. 自动化测试 (可选)
-
-项目包含完整的端到端 (E2E) 测试套件，用于验证核心功能。
-
+**快速导出工具：**
+如果您只需导出已合成的书籍，可直接使用：
 ```bash
-cd front
-npx playwright test
+python cli_export.py 书本路径
 ```
-
-### 5. CLI 快速导出工具 (New)
-
-如果你不想启动 Web 界面或后端服务，可以直接使用 CLI 工具导出已合成的书籍：
-
-```bash
-# 列出所有书籍 ID 并根据提示选择导出
-python cli_export.py
-
-# 或者直接指定书籍 ID 导出
-python cli_export.py 1
-```
-*该工具提供实时进度条（tqdm），适合大批量导出任务。*
-
 
 ---
 
-## 📝 核心 API
+## 导出文件说明
 
-| 方法 | 路径 | 描述 |
-|:-----|:-----|:-----|
-| **GET** | `/api/books` | 获取所有书籍列表 |
-| **POST** | `/api/books/upload` | 上传并解析新书籍 |
-| **GET** | `/api/books/{id}/chapters` | 获取书籍章节结构 |
-| **GET** | `/api/books/chapters/{id}/paragraphs` | 获取章节下的所有段落 |
-| **POST** | `/api/books/{id}/synthesize-batch` | 批量合成指定段落 |
-| **POST** | `/api/books/{id}/chapters/{cid}/synthesize` | **[New]** 合成指定章节 |
-| **POST** | `/api/books/{id}/synthesize` | **[New]** 合成整本书 |
-| **GET** | `/api/books/{id}/progress` | **[New]** 获取实时合成进度 |
-| **POST** | `/api/books/{id}/export` | 导出书籍为音频包 |
-
-## 📦 导出说明
-
-导出完成后，文件将保存在项目根目录的 `output/` 文件夹下，结构如下：
+导出完成后，文件将保存在项目根目录的 `output/` 文件夹下。为了获得最佳播放体验，系统会将章节按时长进行智能分组（默认每段约 40 分钟）：
 
 ```text
 output/
 └── 书籍名称/
-    ├── 01_第一章.wav
-    ├── 01_第一章.lrc
-    ├── 02_第二章.wav
-    └── 02_第二章.lrc
+    ├── chapters1-5/           # 第 1 到 5 章合并段
+    │   ├── chapters1-5.mp3    # 音频文件 (已内嵌封面与元数据)
+    │   └── chapters1-5.lrc    # 同步歌词文件
+    └── chapters6-10/
+        ├── chapters6-10.mp3
+        └── chapters6-10.lrc
 ```
 
-您可以直接将文件夹导入网易云音乐或其他支持本地音乐的播放器，享受精确的歌词同步体验。
+### 播放建议
+- **内嵌封面**: 导出的 MP3 已自动生成并内嵌了带有书名和作者信息的渐变封面。
+- **歌词同步**: 将导出的文件夹导入支持 LRC 的播放器（如网易云音乐、手机系统内置播放器），即可享受精确到词的朗读同步。
 
 ---
 
-## ❓ 常见问题
+## 常见问题
 
 ### 1. Python 3.13 报错 `No module named 'audioop'`
 这是由于 Python 3.13 移除了官方的 `audioop` 模块。
-**解决方法**：
-1. 运行 `pip install audioop-lts`。
-2. 项目已在 `cli_export.py` 和核心代码中集成了兼容性补丁，安装该库后即可正常运行。
+**解决方法**：安装 `pip install audioop-lts`。项目已集成兼容补丁。
 
 ### 2. 导出时显示“音频合并失败”
-- 确保电脑已安装 **FFmpeg** 并已加入系统环境变量（PATH）。
+- 请确保电脑已安装 **FFmpeg** 并已加入系统环境变量（PATH）。
 - 在终端输入 `ffmpeg -version` 确认其可用性。
-- 确保 `.venv` 环境中已正确安装 `pydub`。
 
 ### 3. Edge TTS 合成超时
-- 检查网络连接。
-- 如果在受限网络环境，可以在 `app/config.py` 中配置 `TTS_PROXY`。
+- 检查网络连接。如果环境受限，可在 `app/config.py` 中配置代理支持。
 

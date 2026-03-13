@@ -25,6 +25,8 @@ function StudioContent() {
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [fontSize, setFontSize] = useState(18);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -48,6 +50,11 @@ function StudioContent() {
 
     const handlePause = () => setIsPlaying(false);
     const handlePlayEvent = () => setIsPlaying(true);
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration);
+      setCurrentTime(audio.currentTime);
+    };
     const handleError = (e: any) => {
       console.error("Audio playback error:", e);
       setIsPlaying(false);
@@ -56,12 +63,16 @@ function StudioContent() {
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlayEvent);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("error", handleError);
 
     return () => {
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlayEvent);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
       audio.removeEventListener("error", handleError);
     };
   }, [currentId, paragraphs]);
@@ -118,6 +129,13 @@ function StudioContent() {
           handlePlay(String(paragraphs[0].id));
         }
       }
+    }
+  };
+
+  const handleSeek = (time: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setCurrentTime(time);
     }
   };
 
@@ -250,6 +268,9 @@ function StudioContent() {
         }}
         playbackRate={playbackRate}
         onPlaybackRateChange={setPlaybackRate}
+        currentTime={currentTime}
+        duration={duration}
+        onSeek={handleSeek}
       />
 
       <audio ref={audioRef} className="hidden" />

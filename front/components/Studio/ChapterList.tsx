@@ -30,8 +30,8 @@ export function ChapterList({ chapters = [] }: ChapterListProps) {
                         <Link
                             href={`/studio/chapter/${chapter.id}`}
                             className={`block px-3 py-2 rounded text-sm transition-colors ${chapter.isActive
-                                    ? "bg-white text-claude-accent font-medium shadow-sm border border-claude-border"
-                                    : "text-gray-600 hover:bg-white/50 hover:text-claude-text"
+                                ? "bg-white text-book-accent font-medium shadow-sm border border-book-border"
+                                : "text-gray-600 hover:bg-white/50 hover:text-book-text"
                                 }`}
                         >
                             <span className="truncate block pr-6">{chapter.title}</span>
@@ -39,7 +39,7 @@ export function ChapterList({ chapters = [] }: ChapterListProps) {
 
                         {/* Quick Actions */}
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <button className="p-1 hover:text-claude-accent text-gray-400">
+                            <button className="p-1 hover:text-book-accent text-gray-400">
                                 <Edit2 size={12} />
                             </button>
                         </div>

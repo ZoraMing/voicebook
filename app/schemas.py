@@ -65,6 +65,7 @@ class ChapterSimple(ChapterBase):
     id: int
     book_id: int
     total_paragraphs: int
+    completed_paragraphs: int = 0
     
     class Config:
         from_attributes = True
