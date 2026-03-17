@@ -19,8 +19,8 @@ OUTPUT_DIR = Path(settings.OUTPUT_DIR)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # 时长阈值（毫秒）
-MIN_DURATION_MS = 25 * 60 * 1000   # 25 分钟
-TARGET_DURATION_MS = 40 * 60 * 1000  # 40 分钟
+MIN_DURATION_MS = 90 * 60 * 1000   # 90 分钟
+TARGET_DURATION_MS = 120 * 60 * 1000  # 120 分钟
 
 
 def group_chapters_by_duration(
@@ -28,7 +28,7 @@ def group_chapters_by_duration(
     book_id: int
 ) -> List[Dict]:
     """
-    按时长分组章节，目标 ~40 分钟，最低 25 分钟。
+    按时长分组章节，目标 ~90 分钟，最低 120 分钟。
     
     返回:
         [

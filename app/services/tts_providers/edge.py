@@ -44,7 +44,7 @@ class EdgeTTSProvider(TTSProvider):
                     print(f"[EdgeTTS] 警告: 清理旧文件失败 {output_path}: {e}")
 
             try:
-                communicate = edge_tts.Communicate(text, voice_key)
+                communicate = edge_tts.Communicate(text, voice_key, rate="+30%")
                 timings = []
 
                 with open(output_path, "wb") as f:
